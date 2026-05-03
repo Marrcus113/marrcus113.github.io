@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Поймай шарик — игра</title>
+    <style>
+        * {
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: linear-gradient(145deg, #1a472a 0%, #0e2a1a 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Press Start 2P', 'Courier New', monospace;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 48px;
+            padding: 20px;
+            backdrop-filter: blur(2px);
+            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.1);
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border-radius: 32px;
+            box-shadow: 0 0 0 4px #f7d44a, 0 12px 28px black;
+            cursor: pointer;
+            background: #2b1e2f;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 32px;
+            margin-top: 20px;
+            padding: 12px 24px;
+            background: #000000aa;
+            backdrop-filter: blur(8px);
+            border-radius: 60px;
+            color: #ffefc0;
+            text-shadow: 0 2px 2px black;
+            font-weight: bold;
+        }
+
+        .score-box, .lives-box {
+            background: #1f1a2e;
+            padding: 8px 24px;
+            border-radius: 40px;
+            font-size: 28px;
+            letter-spacing: 2px;
+            box-shadow: inset 0 1px 3px #ffffff30, 0 5px 8px #00000055;
+        }
+
+        .score-box span, .lives-box span {
+            color: #ffbd6a;
+            font-size: 34px;
+            font-weight: 900;
+            margin-right: 8px;
+        }
+
+        button {
+            background: #f5a623;
+            border: none;
+            font-family: monospace;
+            font-weight: bold;
+            font-size: 22px;
+            padding: 6px 24px;
+            border-radius: 60px;
+            cursor: pointer;
+            transition: 0.1s linear;
+            color: #231f1b;
+            box-shadow: 0 4px 0 #7a2e00;
+        }
+
+        button:active {
+            transform: translateY(2px);
+            box-shadow: 0 1px 0 #7a2e00;
+        }
+
+        @media (max-width: 700px) {
+            .stats {
+                gap: 12px;
+                padding: 8px 12px;
+            }
+            .score-box, .lives-box {
+                padding: 4px 16px;
+                font-size: 20px;
+            }
+            .score-box span, .lives-box span {
+                font-size: 26px;
+            }
+            button {
+                font-size: 18px;
+                padding: 4px 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="800" height="500"></canvas>
+        <div class="stats">
+            <div class="score-box">🎯 <span id="scoreValue">0</span> очков</div>
+            <div class="lives-box">❤️ <span id="livesValue">3</span></div>
+            <button id="resetButton">🔄 Новая игра</button>
+        </div>
+    </div>
+    <div style="text-align: center; margin-top: 18px; color: #e9f5b6; font-weight: bold; text-shadow: 2px 2px 0 #1b3b1a;">
+        ⚡ Лови шарик мышкой (или пальцем на планшете) — кликни по нему!
+    </div>
+</div>
+
+<script>
+    (function(){
+        // --- 1. НАСТРОЙКИ ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // размеры поля
+        let width = 800;
+        let height = 500;
+        canvas.width = width;
+        canvas.height = height;
+
+        // Шарик
+        let ball = {
+            x: width/2,
+            y: height/2,
+            radius: 22,
+            color: '#FFB347'
+        };
+
+        let score = 0;
+        let lives = 3;
+        let gameActive = true;
+
+        // Элементы UI
+        const scoreSpan = document.getElementById('scoreValue');
+        const livesSpan = document.getElementById('livesValue');
+        const resetBtn = document.getElementById('resetButton');
+
+        // --- 2. ФУНКЦИЯ ПЕРЕРИСОВКИ И ХИТБОКСА ---
+        function drawGame() {
+            if (!ctx) return;
+            // красивый фон поля (травяной газон / нейтральная клетка)
+            ctx.clearRect(0, 0, width, height);
+            
+            // нежно-зеленый фон под "стол"
+            ctx.fillStyle = '#3c5e3a';
+            ctx.fillRect(0, 0, width, height);
+            // текстура поля - сетка
+            ctx.strokeStyle = '#6b8c5c';
+            ctx.lineWidth = 1;
+            for(let i = 0; i < width; i += 40){
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, height);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i%height);
+                ctx.lineTo(width, i%height);
+                ctx.stroke();
+            }
+            
+            // Тень для шарика
+            ctx.shadowColor = 'rgba(0,0,0,0.4)';
+            ctx.shadowBlur = 8;
+            // сам шарик
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = ball.color;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            // блик
+            ctx.beginPath();
+            ctx.arc(ball.x-5, ball.y-5, 6, 0, Math.PI*2);
+            ctx.fillStyle = '#fff9c4';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(ball.x-2, ball.y-4, 2, 0, Math.PI*2);
+            ctx.fillStyle = 'white';
+            ctx.fill();
+            
+            // обводка
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2);
+            ctx.strokeStyle = '#d48d2b';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            if(!gameActive){
+                ctx.font = 'bold 38monospace';
+                ctx.fillStyle = '#f3c26b';
+                ctx.shadowBlur = 0;
+                ctx.fillText('💀 ИГРА ОКОНЧЕНА 💀', width/2-180, height/2-40);
+                ctx.font = '22px monospace';
+                ctx.fillStyle = '#efcd9b';
+                ctx.fillText('→ нажми "НОВАЯ ИГРА"', width/2-110, height/2+30);
+            }
+        }
+
+        // --- 3. ПРОВЕРКА ПОПАДАНИЯ (клик / тап) ---
+        function isHit(mouseX, mouseY) {
+            const dx = mouseX - ball.x;
+            const dy = mouseY - ball.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            return distance <= ball.radius;
+        }
+
+        // --- 4. ПЕРЕМЕЩЕНИЕ ШАРИКА В СЛУЧАЙНУЮ ПОЗИЦИЮ (НО НЕ ВПЛОТНУЮ К СТЕНАМ)---
+        function relocateBall() {
+            if(!gameActive) return;
+            const margin = ball.radius + 5;
+            const newX = margin + Math.random() * (width - margin * 2);
+            const newY = margin + Math.random() * (height - margin * 2);
+            ball.x = newX;
+            ball.y = newY;
+        }
+        
+        // --- 5. ОБРАБОТКА УСПЕШНОГО ПОПАДАНИЯ ---
+        function catchBall() {
+            if(!gameActive) return;
+            // увеличиваем счёт
+            score++;
+            scoreSpan.innerText = score;
+            // перемещаем шарик
+            relocateBall();
+            // + приятно: меняем цвет как награду (блеск!)
+            ball.color = `hsl(${35 + score % 20}, 80%, 58%)`;
+            drawGame();
+        }
+        
+        // --- 6. ОШИБКА / ПРОМАХ - теряем жизнь---
+        function missPenalty() {
+            if(!gameActive) return;
+            lives--;
+            livesSpan.innerText = lives;
+            if(lives <= 0){
+                gameActive = false;
+                livesSpan.innerText = "0";
+                drawGame();
+                return;
+            }
+            // при промахе шарик всё равно надо двигать? чтобы не застаивался: сделаем «жизнь минус + переброс»
+            relocateBall();
+            drawGame();
+            // эффект вибрации (если поддерживается браузером)
+            if(navigator.vibrate) navigator.vibrate(80);
+        }
+        
+        // --- 7. ОБЩИЙ ОБРАБОТЧИК КЛИКА ПО CANVAS ---
+        function handleCanvasClick(e) {
+            if(!gameActive) return;
+            
+            // получаем координаты относительно canvas
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;   // на случай если CSS растянул
+            const scaleY = canvas.height / rect.height;
+            
+            let clientX, clientY;
+            if(e.touches) {
+                // тач-событие для планшетов / телефонов (мобильная версия)
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+                e.preventDefault();
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            
+            const canvasX = (clientX - rect.left) * scaleX;
+            const canvasY = (clientY - rect.top) * scaleY;
+            
+            if(canvasX >= 0 && canvasX <= width && canvasY >=0 && canvasY <= height){
+                if(isHit(canvasX, canvasY)){
+                    catchBall();
+                } else {
+                    missPenalty();
+                }
+            }
+        }
+        
+        // --- 8. СБРОС ИГРЫ (НОВАЯ ИГРА)---
+        function resetGame() {
+            score = 0;
+            lives = 3;
+            gameActive = true;
+            scoreSpan.innerText = "0";
+            livesSpan.innerText = "3";
+            ball.color = '#FFB347';
+            // стартовая позиция (случайная)
+            const margin = ball.radius + 5;
+            ball.x = margin + Math.random() * (width - margin * 2);
+            ball.y = margin + Math.random() * (height - margin * 2);
+            drawGame();
+        }
+        
+        // --- 9. АДАПТАЦИЯ при изменении размера (чтоб графика не ломалась) + перемешивание ---
+        function adaptSize(){
+            // Сохраняем соотношение (пропорции фпс не нужны)
+            width = 800;
+            height = 500;
+            canvas.width = width;
+            canvas.height = height;
+            // если игра активна — пересчитать позицию шарика в допустимые границы
+            if(ball.x > width - ball.radius) ball.x = width - ball.radius - 2;
+            if(ball.x < ball.radius) ball.x = ball.radius + 2;
+            if(ball.y > height - ball.radius) ball.y = height - ball.radius - 2;
+            if(ball.y < ball.radius) ball.y = ball.radius + 2;
+            drawGame();
+        }
+        
+        // --- 10. НАВЕШИВАЕМ СОБЫТИЯ ---
+        canvas.addEventListener('click', handleCanvasClick);
+        canvas.addEventListener('touchstart', handleCanvasClick, {passive: false});
+        window.addEventListener('resize', () => {
+            setTimeout(adaptSize, 20);
+        });
+        resetBtn.addEventListener('click', () => {
+            resetGame();
+        });
+        
+        // --- СТАРТ ---
+        resetGame();   // устанавливает начальные значения + рисует
+        
+        // гарантия что в неактивном не прыгает перемещение лишний раз
+    })();
+</script>
+</body>
+</html>
